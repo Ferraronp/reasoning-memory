@@ -153,8 +153,12 @@ def summarize(directory):
     for mode in sorted({r["mode"] for r in rows}):
         group = [r for r in rows if r["mode"] == mode]
         # Also supports old logs, where an unpairable prefix was duplicated across arms.
-        scored = [r for r in group if r["correct"] is not None and r.get("pairable") is not False]
+        # Historical runs used correct=false for protocol failures. Keep those
+        # rows in completion counts, but not in answer accuracy.
+        scored = [r for r in group if r["status"] == "completed" and
+                  r["correct"] is not None and r.get("pairable") is not False]
         summary[mode] = {"tasks": len(group), "completed": sum(r["status"] == "completed" for r in group),
+                         "failed": sum(r["status"] != "completed" for r in group),
                          "scored": len(scored),
                          "accuracy": sum(r["correct"] for r in scored) / len(scored) if scored else None,
                          "generated_tokens": sum(r["generated_tokens"] for r in group),

@@ -214,6 +214,29 @@ class RegressionTests(unittest.TestCase):
             self.assertIsNone(summary['full']['accuracy'])
             self.assertEqual(summary['diagnostics']['unpairable_tasks'], 1)
 
+    def test_protocol_failure_is_not_scored_as_wrong_answer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/'results.json').write_text(json.dumps([
+                {'task_id':'a','mode':'full','pairable':True,'status':'protocol_error',
+                 'correct':False,'generated_tokens':10,'prefill_tokens':20},
+                {'task_id':'b','mode':'full','pairable':True,'status':'completed',
+                 'correct':True,'generated_tokens':10,'prefill_tokens':20},
+                {'task_id':'c','mode':'compact','pairable':True,'status':'completed',
+                 'correct':False,'generated_tokens':10,'prefill_tokens':20},
+            ]))
+            with contextlib.redirect_stdout(io.StringIO()):
+                cli.summarize(root)
+            summary = json.loads((root/'summary.json').read_text())
+            self.assertEqual(summary['full']['failed'], 1)
+            self.assertEqual(summary['full']['scored'], 1)
+            self.assertEqual(summary['full']['accuracy'], 1.0)
+            self.assertEqual(summary['compact']['accuracy'], 0.0)
+            engine = Engine(MockBackend(), Config(max_context_tokens=16000))
+            state = engine.start('task')
+            state.status = 'protocol_error'
+            self.assertIsNone(engine.result(state, '17')['correct'])
+
 
 if __name__ == '__main__':
     unittest.main()

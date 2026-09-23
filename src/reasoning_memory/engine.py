@@ -142,8 +142,10 @@ class Engine:
         return fork
 
     def result(self, state, expected=None):
-        correct = None if expected is None else (
-            state.status == "completed" and state.answer == str(expected).strip()
+        # An unfinished run has no answer to score. Protocol completion is
+        # reported separately from the accuracy of completed answers.
+        correct = None if expected is None or state.status != "completed" else (
+            state.answer == str(expected).strip()
         )
         return {"status": state.status, "answer": state.answer, "expected": expected,
                 "correct": correct, "generated_tokens": state.generated_tokens,
