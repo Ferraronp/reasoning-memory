@@ -25,6 +25,34 @@ class GuidedBackend(MockBackend):
 
 
 class RegressionTests(unittest.TestCase):
+    def test_chat_stage_preserves_full_thinking_and_reveals_followup_as_user(self):
+        from reasoning_memory.backend import HFBackend
+        from types import SimpleNamespace
+        class QwenScripted(GuidedBackend):
+            next_user_turn = HFBackend.next_user_turn
+        backend = QwenScripted([
+            ('PRIVATE_BODY r=5</think>', 'stop'), ('r=5</think>', 'stop'),
+            ('SECOND_BODY 17</think>', 'stop'), ('17</think>', 'stop'), ('17', 'eos'),
+            ('SECOND_BODY 17</think>', 'stop'), ('17</think>', 'stop'), ('17', 'eos'),
+        ])
+        backend.tokenizer = SimpleNamespace(all_special_tokens=['<|im_start|>', '<|im_end|>'])
+        engine = Engine(backend, Config(protocol='guided_chat_two_stage', max_context_tokens=16000))
+        shared = engine.run(engine.start('Find r', 'NEW_TASK: compute 4*r-3'), 'full', stop_after_first=True)
+        self.assertTrue(all('NEW_TASK' not in t for t in backend.inputs))
+        full = engine.run(engine.fork(shared, 'full'), 'full')
+        compact = engine.run(engine.fork(shared, 'compact'), 'compact')
+        for i in (2, 5):
+            self.assertIn('</think>\nConclusion: r=5\n<|im_end|>\n<|im_start|>user\nNEW_TASK', backend.inputs[i])
+            self.assertTrue(backend.inputs[i].endswith('<|im_start|>assistant\n<think>\n'))
+        self.assertIn('PRIVATE_BODY', backend.inputs[2])
+        self.assertNotIn('PRIVATE_BODY', backend.inputs[5])
+        self.assertNotIn('SECOND_BODY', backend.inputs[7])
+        self.assertIn('PRIVATE_BODY', full.text)
+        self.assertEqual(full.answer, '17')
+        self.assertEqual(compact.answer, '17')
+        self.assertEqual(len(compact.archive), 2)
+        self.assertNotIn('NEW_TASK', shared.text)
+
     def test_two_stage_forks_before_followup_and_compacts_each_experiment(self):
         backend = GuidedBackend([
             ('FIRST_PRIVATE_BODY r=5</think>', 'stop'), ('r=5</think>', 'stop'),

@@ -27,7 +27,7 @@ class Config:
 
     def __post_init__(self):
         for name, choices in {
-            "backend": {"hf", "mock"}, "protocol": {"autonomous", "guided_single", "guided_two_stage"},
+            "backend": {"hf", "mock"}, "protocol": {"autonomous", "guided_single", "guided_two_stage", "guided_chat_two_stage"},
             "dtype": {"float16", "bfloat16", "float32"},
             "quantization": {"none", "int8"}, "device": {"cuda", "cpu"}
         }.items():

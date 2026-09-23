@@ -69,11 +69,11 @@ def execute(args):
     # Validate before loading model weights or creating an output directory.
     for task in tasks:
         followup = task.get("followup")
-        if cfg.protocol == "guided_two_stage":
+        if cfg.protocol in {"guided_two_stage", "guided_chat_two_stage"}:
             if not isinstance(followup, str) or not followup.strip():
-                raise ValueError("guided_two_stage requires a nonempty task.followup")
+                raise ValueError("Two-stage guided protocol requires a nonempty task.followup")
         elif followup is not None:
-            raise ValueError("task.followup requires guided_two_stage")
+            raise ValueError("task.followup requires a two-stage guided protocol")
     out = Path(args.output or ("runs/" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")))
     out.mkdir(parents=True, exist_ok=False)  # Never overwrite an earlier experiment.
     write_json(out / "config.json", cfg.to_dict())

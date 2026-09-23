@@ -18,9 +18,17 @@ def step(engine, state, mode, emit=None):
     # A normal compact run also reaches it only after compaction of stage 1.
     if state.phase == "next_stage":
         state.stage = 2
-        state.chunks.append({"kind": "stage_instruction", "text":
-            "\nNext stage (provided by the controller):\n" + state.followup +
-            "\nI will use the saved conclusion to work through this stage.\n"})
+        if cfg.protocol == "guided_chat_two_stage":
+            # Present the existing summary as the first assistant turn's answer.
+            # Keep full's reasoning verbatim; compact has already removed it.
+            summary_index = next(i for i, c in enumerate(state.chunks)
+                                 if c["kind"] == "summary" and c["id"] == "e1")
+            state.chunks.insert(summary_index, {"kind": "turn_boundary", "text": "</think>\n"})
+            transition = engine.backend.next_user_turn(state.followup)
+        else:
+            transition = ("\nNext stage (provided by the controller):\n" + state.followup +
+                          "\nI will use the saved conclusion to work through this stage.\n")
+        state.chunks.append({"kind": "stage_instruction", "text": transition})
         state.chunks.append({"kind": "experiment", "id": "e2", "text": ""})
         state.phase = "experiment"
     phase = state.phase

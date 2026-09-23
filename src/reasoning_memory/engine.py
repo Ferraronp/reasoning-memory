@@ -34,11 +34,11 @@ class Engine:
         self.backend, self.config = backend, config
 
     def start(self, prompt, followup=None):
-        if self.config.protocol == "guided_two_stage":
+        if self.config.protocol in {"guided_two_stage", "guided_chat_two_stage"}:
             if not isinstance(followup, str) or not followup.strip():
-                raise ValueError("guided_two_stage requires a nonempty task.followup")
+                raise ValueError("Two-stage guided protocol requires a nonempty task.followup")
         elif followup is not None:
-            raise ValueError("task.followup requires guided_two_stage; it must not be silently ignored")
+            raise ValueError("task.followup requires a two-stage guided protocol; it must not be silently ignored")
         if self.config.protocol.startswith("guided_"):
             state = State(self.backend.prompt(guided_prompt(), prompt), phase="experiment", followup=followup)
             # Let the model start its ordinary reasoning; bookkeeping tags stay external.

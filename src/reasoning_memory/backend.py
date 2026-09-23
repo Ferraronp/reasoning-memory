@@ -24,6 +24,9 @@ class MockBackend:
     def prompt(self, system, task):
         return f"SYSTEM: {system}\nUSER: {task}\nASSISTANT: <think>\n"
 
+    def next_user_turn(self, task):
+        return "\nUSER: " + task + "\nASSISTANT: <think>\n"
+
     def count(self, text):
         return len(text)  # Explicitly character units for mock only.
 
@@ -88,6 +91,13 @@ class HFBackend:
             else:
                 raise ValueError("Unsupported chat-template suffix; add a model-specific thinking adapter")
         return prefix
+
+    def next_user_turn(self, task):
+        # Qwen3 adapter: append only the new turn. Re-rendering old assistant
+        # messages through a template can remove their thinking content.
+        if not {"<|im_start|>", "<|im_end|>"}.issubset(set(self.tokenizer.all_special_tokens)):
+            raise ValueError("Unsupported chat turn delimiters; expected Qwen3")
+        return "<|im_end|>\n<|im_start|>user\n" + task + "<|im_end|>\n<|im_start|>assistant\n<think>\n"
 
     def count(self, text):
         return len(self.tokenizer.encode(text, add_special_tokens=False))
