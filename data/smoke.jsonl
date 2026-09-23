@@ -1,0 +1,1 @@
+{"id":"smoke_add","prompt":"Compute 2 + 3. Use one short experiment. Put only the integer in the final answer.","expected":"5"}

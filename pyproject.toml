@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reasoning-memory"
+version = "0.2.0"
+description = "Experiments with mandatory compaction inside a reasoning trace"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+hf = ["torch>=2.2,<3", "transformers>=4.51,<5", "accelerate>=1,<2", "safetensors>=0.4"]
+int8 = ["bitsandbytes>=0.45,<1"]
+
+[project.scripts]
+reasoning-memory = "reasoning_memory.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

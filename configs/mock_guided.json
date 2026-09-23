@@ -1,0 +1,10 @@
+{
+  "backend": "mock",
+  "max_context_tokens": 16384,
+  "max_new_tokens": 1024,
+  "max_total_new_tokens": 4096,
+  "seed": 42,
+  "protocol": "guided_single",
+  "summary_max_new_tokens": 256,
+  "answer_max_new_tokens": 128
+}

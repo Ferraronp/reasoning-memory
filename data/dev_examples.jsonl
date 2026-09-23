@@ -1,0 +1,2 @@
+{"id":"dev_affine","prompt":"An unknown integer affine function f(x)=a*x+b satisfies f(2)=9 and f(5)=18. Determine a and b in an experiment, summarize them, then determine f(8). Put only the integer in the final answer.","expected":"27"}
+{"id":"dev_rules","prompt":"Rules in this world: each dax has 3 blue units and each blue unit is worth 4 points. Each vem has 2 red units and each red unit is worth 5 points. Derive the score of one dax, then investigate vem. Finally compute the total score of 2 dax and 3 vem. Put only the integer in the final answer.","expected":"54"}
