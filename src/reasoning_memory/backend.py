@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import gc
 import platform
 import time
 
@@ -7,6 +8,10 @@ from .protocol import STOP_STRINGS
 
 class ContextLimit(RuntimeError):
     pass
+
+
+class InferenceOutOfMemory(RuntimeError):
+    """The current generation could not fit in GPU memory."""
 
 
 @dataclass
@@ -73,6 +78,7 @@ class HFBackend:
         if config.quantization == "int8":
             kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
         self.model = AutoModelForCausalLM.from_pretrained(config.model_id, **kwargs).eval()
+        self.offloaded_cache_retries = 0
         maximum = getattr(self.model.config, "max_position_embeddings", config.max_context_tokens)
         self.context_limit = min(config.max_context_tokens, maximum)
         if config.device == "cuda":
@@ -125,10 +131,37 @@ class HFBackend:
         if config.device == "cuda":
             torch.cuda.synchronize()
         started = time.perf_counter()
+        # No past_key_values accepted or returned. Cache lives only within this call.
+        first_oom = False
         with torch.inference_mode():
-            # No past_key_values accepted or returned. Cache lives only within this call.
-            output = self.model.generate(**inputs,
-                generation_config=self.transformers.GenerationConfig(**params), tokenizer=self.tokenizer)
+            try:
+                output = self.model.generate(**inputs,
+                    generation_config=self.transformers.GenerationConfig(**params), tokenizer=self.tokenizer)
+            except torch.OutOfMemoryError:
+                first_oom = True
+        if first_oom:
+            gc.collect()
+            if config.device == "cuda":
+                torch.cuda.empty_cache()
+            if not config.retry_offloaded_on_oom:
+                raise InferenceOutOfMemory("CUDA out of memory during generation")
+            self.offloaded_cache_retries += 1
+            # A fresh attempt with the same seed moves most KV cache to CPU.
+            # The prompt is still prefetched from scratch for this attempt.
+            self.transformers.set_seed(seed)
+            second_oom = False
+            with torch.inference_mode():
+                try:
+                    output = self.model.generate(**inputs,
+                        generation_config=self.transformers.GenerationConfig(
+                            **{**params, "cache_implementation": "offloaded"}), tokenizer=self.tokenizer)
+                except torch.OutOfMemoryError:
+                    second_oom = True
+            if second_oom:
+                gc.collect()
+                if config.device == "cuda":
+                    torch.cuda.empty_cache()
+                raise InferenceOutOfMemory("CUDA out of memory even with offloaded KV cache")
         if config.device == "cuda":
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - started
@@ -153,6 +186,7 @@ class HFBackend:
                 "tokenizer_revision": self.tokenizer.init_kwargs.get("_commit_hash"),
                 "torch": torch.__version__, "transformers": self.transformers.__version__,
                 "python": platform.python_version(), "context_limit": self.context_limit,
+                "offloaded_cache_retries": self.offloaded_cache_retries,
                 "gpu": torch.cuda.get_device_name() if self.config.device == "cuda" else None,
                 "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated() if self.config.device == "cuda" else None}
 

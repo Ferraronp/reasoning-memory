@@ -26,6 +26,7 @@ class Config:
     answer_max_new_tokens: int = 128
     stage2_hide_source: bool = False
     continue_experiment_on_length: bool = False
+    retry_offloaded_on_oom: bool = False
 
     def __post_init__(self):
         for name, choices in {

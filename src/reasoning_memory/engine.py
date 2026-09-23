@@ -4,7 +4,7 @@ import hashlib
 import json
 from typing import Callable
 
-from .backend import ContextLimit
+from .backend import ContextLimit, InferenceOutOfMemory
 from .protocol import ProtocolError, guided_prompt, parse, system_prompt
 
 
@@ -122,6 +122,8 @@ class Engine:
             state.status, record["error"] = "protocol_error", str(exc)
         except ContextLimit as exc:
             state.status, record["error"] = "context_limit", str(exc)
+        except InferenceOutOfMemory as exc:
+            state.status, record["error"] = "resource_exhausted", str(exc)
         record["status"] = state.status
         record["active_after"] = state.text
         record["active_after_tokens"] = self.backend.count(state.text)

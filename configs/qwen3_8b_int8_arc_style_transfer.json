@@ -13,6 +13,7 @@
   "answer_max_new_tokens": 256,
   "stage2_hide_source": true,
   "continue_experiment_on_length": true,
+  "retry_offloaded_on_oom": true,
   "allow_restore": false,
   "seed": 42
 }

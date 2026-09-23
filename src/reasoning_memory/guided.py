@@ -2,7 +2,7 @@
 from dataclasses import asdict
 import hashlib
 
-from .backend import ContextLimit
+from .backend import ContextLimit, InferenceOutOfMemory
 from .protocol import ProtocolError, RESERVED, guided_prompt
 
 
@@ -113,6 +113,8 @@ def step(engine, state, mode, emit=None):
         state.status, record["error"] = "protocol_error", str(exc)
     except ContextLimit as exc:
         state.status, record["error"] = "context_limit", str(exc)
+    except InferenceOutOfMemory as exc:
+        state.status, record["error"] = "resource_exhausted", str(exc)
     record.update(status=state.status, active_after=state.text, active_after_tokens=engine.backend.count(state.text))
     state.events.append(record)
     if emit:

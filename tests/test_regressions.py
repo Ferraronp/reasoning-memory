@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from reasoning_memory import cli
-from reasoning_memory.backend import Generation, MockBackend
+from reasoning_memory.backend import Generation, InferenceOutOfMemory, MockBackend
 from reasoning_memory.config import Config
 from reasoning_memory.engine import Engine
 
@@ -25,6 +25,111 @@ class GuidedBackend(MockBackend):
 
 
 class RegressionTests(unittest.TestCase):
+    def test_full_oom_preserves_diagnostics_and_still_runs_compact(self):
+        from reasoning_memory.backend import HFBackend
+        from types import SimpleNamespace
+        class OOMAfterShared(GuidedBackend):
+            next_user_turn = HFBackend.next_user_turn
+
+            def generate(self, text, limit, seed, stop_strings=None):
+                self.inputs.append(text)
+                item = next(self.outputs)
+                if isinstance(item, Exception):
+                    raise item
+                content, reason = item
+                return Generation(content, len(text), len(content), finish_reason=reason)
+
+        backend = OOMAfterShared([
+            ('Rotate the grid clockwise.</think>', 'stop'),
+            ('Rotate 90 degrees clockwise.</think>', 'stop'),
+            InferenceOutOfMemory('CUDA out of memory even with offloaded KV cache'),
+            ('Apply clockwise rotation.</think>', 'stop'),
+            ('[[0,2],[1,0]]', 'eos'),
+        ])
+        backend.tokenizer = SimpleNamespace(all_special_tokens=['<|im_start|>', '<|im_end|>'])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config, tasks, out = root/'config.json', root/'tasks.jsonl', root/'run'
+            config.write_text(json.dumps({'backend':'mock', 'protocol':'guided_chat_two_stage',
+                'stage2_hide_source': True, 'max_context_tokens':16000}))
+            tasks.write_text(json.dumps({'id':'rotate','prompt':'Infer rotation',
+                'followup':'Transform [[1,0],[2,0]]', 'expected':[[0,2],[1,0]]})+'\n')
+            args = argparse.Namespace(config=config, tasks=tasks, output=out, seed=None,
+                                      limit=None, task_id=None, command='pair')
+            with patch.object(cli, 'make_backend', return_value=backend), contextlib.redirect_stdout(io.StringIO()):
+                code = cli.execute(args)
+            self.assertEqual(code, 2)
+            rows = json.loads((out/'results.json').read_text())
+            self.assertEqual([(r['mode'], r['status'], r['correct']) for r in rows],
+                             [('full', 'resource_exhausted', None), ('compact', 'completed', True)])
+            self.assertEqual(json.loads((out/'manifest.json').read_text())['status'], 'finished_with_errors')
+            self.assertEqual(json.loads((out/'manifest.json').read_text())['completed_pairs'], 0)
+            self.assertTrue((out/'task_00000/full.json').exists())
+            self.assertTrue((out/'task_00000/compact.json').exists())
+            self.assertTrue((out/'summary.json').exists())
+            self.assertIn('resource_exhausted', (out/'task_00000/events.jsonl').read_text())
+
+    def test_hf_oom_retries_with_offloaded_cache_and_original_seed(self):
+        from reasoning_memory.backend import HFBackend
+        from types import SimpleNamespace
+
+        class FakeOOM(RuntimeError):
+            pass
+
+        class FakeTokens(dict):
+            def __init__(self):
+                super().__init__(input_ids=SimpleNamespace(shape=[1, 3]))
+                self.input_ids = self['input_ids']
+
+            def to(self, device):
+                return self
+
+        class FakeTokenizer:
+            pad_token_id = 0
+
+            def __call__(self, text, **kwargs):
+                return FakeTokens()
+
+            def decode(self, ids, **kwargs):
+                return '5' if ids else ''
+
+        class FakeModel:
+            generation_config = SimpleNamespace(eos_token_id=2, bos_token_id=1)
+
+            def __init__(self):
+                self.cache_modes = []
+
+            def generate(self, **kwargs):
+                self.cache_modes.append(getattr(kwargs['generation_config'], 'cache_implementation', None))
+                if len(self.cache_modes) == 1:
+                    raise FakeOOM('GPU full')
+                class FakeOutput:
+                    def __getitem__(self, key):
+                        return SimpleNamespace(tolist=lambda: [5, 2])
+                return FakeOutput()
+
+        model = FakeModel()
+        seeds = []
+        emptied = []
+        backend = HFBackend.__new__(HFBackend)
+        backend.model = model
+        backend.tokenizer = FakeTokenizer()
+        backend.context_limit = 8192
+        backend.offloaded_cache_retries = 0
+        backend.config = SimpleNamespace(device='cuda', temperature=0, top_p=1, top_k=0,
+                                         retry_offloaded_on_oom=True)
+        backend.transformers = SimpleNamespace(set_seed=seeds.append,
+            GenerationConfig=lambda **kwargs: SimpleNamespace(**kwargs))
+        backend.torch = SimpleNamespace(OutOfMemoryError=FakeOOM,
+            inference_mode=contextlib.nullcontext,
+            cuda=SimpleNamespace(synchronize=lambda: None, empty_cache=lambda: emptied.append(True)))
+        result = backend.generate('text', 50, 42, stop_strings=['</answer>'])
+        self.assertEqual(result.finish_reason, 'eos')
+        self.assertEqual(model.cache_modes, [None, 'offloaded'])
+        self.assertEqual(seeds, [42, 42])
+        self.assertEqual(len(emptied), 1)
+        self.assertEqual(backend.offloaded_cache_retries, 1)
+
     def test_task_id_runs_only_requested_task_and_records_source_dataset(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
