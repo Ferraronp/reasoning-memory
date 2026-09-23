@@ -76,6 +76,47 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(compact.archive['e2']['summary'], '17')
         self.assertNotIn('NEW_TASK', shared.text)
 
+    def test_length_chunk_continues_same_experiment_before_shared_fork(self):
+        backend = GuidedBackend([
+            ('The grid should ro', 'length'), ('tate clockwise.</think>', 'stop'),
+            ('Rotate 90 degrees clockwise.</think>', 'stop'),
+            ('Apply the rule.</think>', 'stop'), ('[[1,0]]', 'eos'),
+            ('Apply the summary.</think>', 'stop'), ('[[1,0]]', 'eos'),
+        ])
+        cfg = Config(protocol='guided_chat_two_stage', max_context_tokens=16000,
+                     max_total_new_tokens=5120, continue_experiment_on_length=True)
+        engine = Engine(backend, cfg)
+        shared = engine.start('Infer rotation.', 'Transform test grid.')
+        engine.step(shared, 'full')
+        self.assertEqual(shared.status, 'running')
+        self.assertEqual(shared.archive, {})
+        self.assertEqual(shared.phase, 'experiment')
+        self.assertTrue(shared.events[0]['continued'])
+        self.assertTrue(backend.inputs[1:] == [])
+        engine.run(shared, 'full', stop_after_first=True)
+        self.assertIn('The grid should ro', backend.inputs[1])
+        self.assertEqual(shared.archive['e1']['body'], 'The grid should rotate clockwise.')
+        self.assertEqual(shared.archive['e1']['summary'], 'Conclusion: Rotate 90 degrees clockwise.')
+        full = engine.run(engine.fork(shared, 'full'), 'full')
+        compact = engine.run(engine.fork(shared, 'compact'), 'compact')
+        self.assertEqual(full.status, 'completed')
+        self.assertEqual(compact.status, 'completed')
+        self.assertIn('The grid should rotate clockwise.', backend.inputs[3])
+        self.assertNotIn('The grid should rotate clockwise.', backend.inputs[5])
+        self.assertEqual(full.answer, compact.answer)
+
+    def test_continued_experiment_exhausts_total_budget_without_compacting(self):
+        backend = GuidedBackend([('unfinished reasoning', 'length')])
+        cfg = Config(protocol='guided_single', max_context_tokens=16000,
+                     max_total_new_tokens=len('unfinished reasoning'),
+                     continue_experiment_on_length=True)
+        engine = Engine(backend, cfg)
+        state = engine.run(engine.start('Infer rule'), 'compact')
+        self.assertEqual(state.status, 'budget_exhausted')
+        self.assertEqual(state.archive, {})
+        self.assertIn('unfinished reasoning', state.text)
+        self.assertIsNone(state.answer)
+
     def test_hidden_source_for_grid_transfer_removes_examples_from_both_arms(self):
         from reasoning_memory.backend import HFBackend
         from types import SimpleNamespace

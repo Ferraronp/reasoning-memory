@@ -61,13 +61,21 @@ def step(engine, state, mode, emit=None):
         state.prefill_tokens += result.input_tokens
         state.generation_seconds += result.seconds
         boundary = next((s for s in stops if result.text.endswith(s)), None)
-        content = result.text[:-len(boundary)] if boundary else result.text
-        content = content.strip()
-        # No forced closure at a length cap, and no fallback extracting gold/numeric answers.
-        if result.finish_reason == "length" or (boundary is None and not (phase == "answer" and result.finish_reason == "eos")):
+        raw_content = result.text[:-len(boundary)] if boundary else result.text
+        # A length cap is a chunk boundary, not an experiment boundary. Keep
+        # the unfinished text and let the model continue it in the same turn.
+        # The experiment is archived only after a genuine closing tag and summary.
+        if result.finish_reason == "length" and phase == "experiment" and cfg.continue_experiment_on_length:
+            if not raw_content or RESERVED.search(state.chunks[-1]["text"] + raw_content):
+                raise ProtocolError("Empty or nested protocol content in guided experiment continuation")
+            state.chunks[-1]["text"] += raw_content
+            record["continued"] = True
+        elif result.finish_reason == "length" or (boundary is None and not (phase == "answer" and result.finish_reason == "eos")):
             state.status = "incomplete_phase_" + result.finish_reason
             record["error"] = f"{phase} did not reach its end boundary; no automatic repair"
         else:
+            content = ((state.chunks[-1]["text"] + raw_content).strip() if phase == "experiment"
+                       else raw_content.strip())
             if not content or RESERVED.search(content):
                 raise ProtocolError(f"Empty or nested protocol content in guided {phase}")
             record["boundary"] = boundary or "eos"

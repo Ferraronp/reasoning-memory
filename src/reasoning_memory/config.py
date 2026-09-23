@@ -25,6 +25,7 @@ class Config:
     summary_max_new_tokens: int = 256
     answer_max_new_tokens: int = 128
     stage2_hide_source: bool = False
+    continue_experiment_on_length: bool = False
 
     def __post_init__(self):
         for name, choices in {
@@ -43,6 +44,8 @@ class Config:
             raise ValueError("Guided diagnostics do not support restore")
         if self.stage2_hide_source and self.protocol != "guided_chat_two_stage":
             raise ValueError("stage2_hide_source requires guided_chat_two_stage")
+        if self.continue_experiment_on_length and not self.protocol.startswith("guided_"):
+            raise ValueError("continue_experiment_on_length requires a guided protocol")
 
     @classmethod
     def load(cls, path):

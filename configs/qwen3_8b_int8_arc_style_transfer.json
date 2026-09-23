@@ -8,10 +8,11 @@
   "quantization": "int8",
   "max_context_tokens": 8192,
   "max_new_tokens": 2048,
-  "max_total_new_tokens": 4096,
+  "max_total_new_tokens": 5120,
   "summary_max_new_tokens": 256,
   "answer_max_new_tokens": 256,
   "stage2_hide_source": true,
+  "continue_experiment_on_length": true,
   "allow_restore": false,
   "seed": 42
 }
