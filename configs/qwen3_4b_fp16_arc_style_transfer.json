@@ -1,0 +1,17 @@
+{
+  "backend": "hf",
+  "protocol": "guided_chat_two_stage",
+  "model_id": "Qwen/Qwen3-4B",
+  "revision": "main",
+  "device": "cuda",
+  "dtype": "float16",
+  "quantization": "none",
+  "max_context_tokens": 8192,
+  "max_new_tokens": 2048,
+  "max_total_new_tokens": 4096,
+  "summary_max_new_tokens": 256,
+  "answer_max_new_tokens": 256,
+  "stage2_hide_source": true,
+  "allow_restore": false,
+  "seed": 42
+}
