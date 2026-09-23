@@ -3,7 +3,7 @@ from dataclasses import asdict
 import hashlib
 
 from .backend import ContextLimit
-from .protocol import ProtocolError, RESERVED
+from .protocol import ProtocolError, RESERVED, guided_prompt
 
 
 def step(engine, state, mode, emit=None):
@@ -18,6 +18,14 @@ def step(engine, state, mode, emit=None):
     # A normal compact run also reaches it only after compaction of stage 1.
     if state.phase == "next_stage":
         state.stage = 2
+        if cfg.stage2_hide_source:
+            # Both arms lose the source examples at the same boundary. The
+            # detailed reasoning survives in full; compact retains its summary.
+            state.prefix = engine.backend.prompt(
+                guided_prompt(),
+                "The Stage 1 examples are no longer available. Continue using "
+                "only your earlier reasoning or its reusable conclusion."
+            )
         if cfg.protocol == "guided_chat_two_stage":
             # Present the existing summary as the first assistant turn's answer.
             # Keep full's reasoning verbatim; compact has already removed it.

@@ -24,6 +24,7 @@ class Config:
     seed: int = 42
     summary_max_new_tokens: int = 256
     answer_max_new_tokens: int = 128
+    stage2_hide_source: bool = False
 
     def __post_init__(self):
         for name, choices in {
@@ -40,6 +41,8 @@ class Config:
             raise ValueError("Invalid sampling/restore limits")
         if self.protocol.startswith("guided_") and self.allow_restore:
             raise ValueError("Guided diagnostics do not support restore")
+        if self.stage2_hide_source and self.protocol != "guided_chat_two_stage":
+            raise ValueError("stage2_hide_source requires guided_chat_two_stage")
 
     @classmethod
     def load(cls, path):

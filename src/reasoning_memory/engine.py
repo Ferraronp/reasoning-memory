@@ -1,6 +1,7 @@
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 import hashlib
+import json
 from typing import Callable
 
 from .backend import ContextLimit
@@ -144,9 +145,20 @@ class Engine:
     def result(self, state, expected=None):
         # An unfinished run has no answer to score. Protocol completion is
         # reported separately from the accuracy of completed answers.
-        correct = None if expected is None or state.status != "completed" else (
-            state.answer == str(expected).strip()
-        )
+        if expected is None or state.status != "completed":
+            correct = None
+        elif isinstance(expected, list):
+            # A grid is compared structurally: JSON whitespace does not
+            # change correctness, but missing/extra cells do.
+            try:
+                decoded = json.loads(state.answer)
+                correct = (isinstance(decoded, list) and decoded == expected and
+                           all(isinstance(row, list) and all(type(cell) is int for cell in row)
+                               for row in decoded))
+            except (TypeError, ValueError):
+                correct = False
+        else:
+            correct = state.answer == str(expected).strip()
         return {"status": state.status, "answer": state.answer, "expected": expected,
                 "correct": correct, "generated_tokens": state.generated_tokens,
                 "prefill_tokens": state.prefill_tokens, "generation_seconds": state.generation_seconds,

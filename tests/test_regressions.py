@@ -76,6 +76,39 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(compact.archive['e2']['summary'], '17')
         self.assertNotIn('NEW_TASK', shared.text)
 
+    def test_hidden_source_for_grid_transfer_removes_examples_from_both_arms(self):
+        from reasoning_memory.backend import HFBackend
+        from types import SimpleNamespace
+        class QwenScripted(GuidedBackend):
+            next_user_turn = HFBackend.next_user_turn
+        backend = QwenScripted([
+            ('The examples include SECRET_EXAMPLE; rotate clockwise.</think>', 'stop'),
+            ('Rotate the grid 90 degrees clockwise.</think>', 'stop'),
+            ('The new input becomes a two-row grid.</think>', 'stop'),
+            ('[[0,2],[1,0]]', 'eos'),
+            ('Use the clockwise rule saved in the conclusion.</think>', 'stop'),
+            ('[[0, 2], [1, 0]]', 'eos'),
+        ])
+        backend.tokenizer = SimpleNamespace(all_special_tokens=['<|im_start|>', '<|im_end|>'])
+        cfg = Config(protocol='guided_chat_two_stage', stage2_hide_source=True,
+                     max_context_tokens=16000)
+        engine = Engine(backend, cfg)
+        shared = engine.run(engine.start('SECRET_EXAMPLE: infer the rule',
+                                         'Apply to the new grid.'), 'full', stop_after_first=True)
+        full = engine.run(engine.fork(shared, 'full'), 'full')
+        compact = engine.run(engine.fork(shared, 'compact'), 'compact')
+        for index in (2, 4):
+            self.assertNotIn('SECRET_EXAMPLE: infer the rule', backend.inputs[index])
+            self.assertIn('Apply to the new grid.', backend.inputs[index])
+            self.assertIn('Conclusion: Rotate the grid 90 degrees clockwise.', backend.inputs[index])
+        self.assertIn('The examples include SECRET_EXAMPLE', backend.inputs[2])
+        self.assertNotIn('The examples include SECRET_EXAMPLE', backend.inputs[4])
+        self.assertIn('SECRET_EXAMPLE: infer the rule', shared.text)
+        self.assertTrue(engine.result(full, [[0, 2], [1, 0]])['correct'])
+        self.assertTrue(engine.result(compact, [[0, 2], [1, 0]])['correct'])
+        self.assertFalse(engine.result(compact, [[1, 0], [0, 2]])['correct'])
+        self.assertRaises(ValueError, Config, protocol='guided_single', stage2_hide_source=True)
+
     def test_chat_incomplete_second_answer_does_not_archive_or_compact_body(self):
         from reasoning_memory.backend import HFBackend
         from types import SimpleNamespace
