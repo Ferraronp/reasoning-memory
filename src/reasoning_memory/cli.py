@@ -66,6 +66,14 @@ def execute(args):
         if args.limit <= 0:
             raise ValueError("--limit must be positive")
         tasks = tasks[:args.limit]
+    # Validate before loading model weights or creating an output directory.
+    for task in tasks:
+        followup = task.get("followup")
+        if cfg.protocol == "guided_two_stage":
+            if not isinstance(followup, str) or not followup.strip():
+                raise ValueError("guided_two_stage requires a nonempty task.followup")
+        elif followup is not None:
+            raise ValueError("task.followup requires guided_two_stage")
     out = Path(args.output or ("runs/" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")))
     out.mkdir(parents=True, exist_ok=False)  # Never overwrite an earlier experiment.
     write_json(out / "config.json", cfg.to_dict())
@@ -89,7 +97,7 @@ def execute(args):
                         journal.flush()
                         if event.get("phase") and not event.get("error"):
                             gen = event.get("generation", {})
-                            print(f'[{branch}] {event["phase"]}: {gen.get("generated_tokens", 0)} generated tokens; '
+                            print(f'[{branch}] {event["phase"]} (stage {event.get("stage", 1)}): {gen.get("generated_tokens", 0)} generated tokens; '
                                   f'active context {event["active_after_tokens"]} tokens', flush=True)
                             generated_text = gen.get("text", "")
                             print(generated_text[:1200] + ('\n[Full text in events.jsonl]' if len(generated_text) > 1200 else ''), flush=True)
@@ -97,7 +105,7 @@ def execute(args):
                             print(f'[{branch}] {event["status"]}: {event["error"]}', flush=True)
                             print(event.get("generation", {}).get("text", "")[-2000:], flush=True)
                     return save
-                state = engine.start(task["prompt"])
+                state = engine.start(task["prompt"], task.get("followup"))
                 if args.command == "pair":
                     engine.run(state, "full", emit("shared"), stop_after_first=True)
                     write_json(taskdir / "shared_prefix.json", engine.result(state))

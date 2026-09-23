@@ -1,4 +1,4 @@
-"""Controller-scaffolded, one-experiment diagnostic. Not autonomous protocol use."""
+"""Controller-scaffolded diagnostics with one or two stages; not autonomous protocol use."""
 from dataclasses import asdict
 import hashlib
 
@@ -14,7 +14,17 @@ def step(engine, state, mode, emit=None):
     if remaining <= 0 or len(state.events) >= cfg.max_events:
         state.status = "budget_exhausted"
         return
+    # This transition happens only after the shared summary has been forked.
+    # A normal compact run also reaches it only after compaction of stage 1.
+    if state.phase == "next_stage":
+        state.stage = 2
+        state.chunks.append({"kind": "stage_instruction", "text":
+            "\nNext stage (provided by the controller):\n" + state.followup +
+            "\nI will use the saved conclusion to work through this stage.\n"})
+        state.chunks.append({"kind": "experiment", "id": "e2", "text": ""})
+        state.phase = "experiment"
     phase = state.phase
+    experiment_id = f"e{state.stage}"
     limits = {"experiment": cfg.max_new_tokens, "summary": cfg.summary_max_new_tokens,
               "answer": cfg.answer_max_new_tokens}
     stops = {"experiment": ["</experiment>", "</think>"],
@@ -23,7 +33,7 @@ def step(engine, state, mode, emit=None):
         state.chunks.append({"kind": "answer", "text": '</think>\n\n'})
     before = state.text
     record = {"index": len(state.events), "mode": mode, "phase": phase,
-              "protocol": "guided_single", "controller_scaffolded": True,
+              "protocol": cfg.protocol, "stage": state.stage, "controller_scaffolded": True,
               "active_before": before, "input_sha256": hashlib.sha256(before.encode()).hexdigest(),
               "seed": cfg.seed + len(state.events)}
     try:
@@ -48,17 +58,17 @@ def step(engine, state, mode, emit=None):
             if phase == "experiment":
                 state.pending_body = content
                 state.chunks[-1]["text"] = content + "\n\n"
-                state.chunks.append({"kind": "summary", "id": "e1", "text":
+                state.chunks.append({"kind": "summary", "id": experiment_id, "text":
                     'Now I will state a short reusable conclusion without repeating the derivation.\nConclusion: '})
                 state.phase = "summary"
             elif phase == "summary":
                 summary = "Conclusion: " + content
                 state.chunks[-1]["text"] = summary + "\n"
-                state.archive["e1"] = {"id": "e1", "body": state.pending_body, "summary": summary}
+                state.archive[experiment_id] = {"id": experiment_id, "body": state.pending_body, "summary": summary}
                 state.pending_body = ""
                 if mode == "compact":
                     engine.compact(state)
-                state.phase = "answer"
+                state.phase = "next_stage" if state.followup is not None and state.stage == 1 else "answer"
             else:
                 state.chunks[-1]["text"] += content
                 state.answer, state.status, state.phase = content, "completed", "done"

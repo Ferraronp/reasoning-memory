@@ -27,7 +27,7 @@ class Config:
 
     def __post_init__(self):
         for name, choices in {
-            "backend": {"hf", "mock"}, "protocol": {"autonomous", "guided_single"},
+            "backend": {"hf", "mock"}, "protocol": {"autonomous", "guided_single", "guided_two_stage"},
             "dtype": {"float16", "bfloat16", "float32"},
             "quantization": {"none", "int8"}, "device": {"cuda", "cpu"}
         }.items():
@@ -38,8 +38,8 @@ class Config:
                 raise ValueError(f"{name} must be positive")
         if self.max_restores < 0 or self.temperature < 0 or not 0 < self.top_p <= 1 or self.top_k < 0:
             raise ValueError("Invalid sampling/restore limits")
-        if self.protocol == "guided_single" and self.allow_restore:
-            raise ValueError("guided_single is a single-experiment diagnostic without restore")
+        if self.protocol.startswith("guided_") and self.allow_restore:
+            raise ValueError("Guided diagnostics do not support restore")
 
     @classmethod
     def load(cls, path):

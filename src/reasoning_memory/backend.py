@@ -29,7 +29,7 @@ class MockBackend:
 
     def generate(self, text, limit, seed, stop_strings=None):
         if stop_strings is not None:
-            if text.endswith('<think>\n'):
+            if '</experiment>' in stop_strings:
                 out = '2 plus 3 equals 5.</think>'
             elif text.endswith('Conclusion: '):
                 out = 'The sum is 5.</think>'

@@ -26,3 +26,10 @@ GPU/FP16/INT8 проверки, открытие в Colab, измерения к
 Новый guided-режим на реальных весах ещё не проверен.
 
 В v0.2.1 дополнительно проверены отсутствие XML-префикса в guided-входе и честный отказ на пустом эксперименте. Новый prompt на реальных весах здесь не проверен.
+
+## Two-stage regression coverage
+Scripted generation verifies that followup is absent from stage 1; forks share
+summary and continuation seed; stage 2 compact input excludes e1 body; final
+compact input excludes both bodies while the archive retains both. A truncated
+second summary preserves its unfinished experiment and cannot yield an answer.
+Missing followup and followup used with incompatible protocols are rejected.

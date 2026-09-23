@@ -21,6 +21,8 @@ class State:
     answer: str | None = None
     phase: str = "autonomous"
     pending_body: str = ""
+    followup: str | None = None
+    stage: int = 1
 
     @property
     def text(self):
@@ -31,9 +33,14 @@ class Engine:
     def __init__(self, backend, config):
         self.backend, self.config = backend, config
 
-    def start(self, prompt):
-        if self.config.protocol == "guided_single":
-            state = State(self.backend.prompt(guided_prompt(), prompt), phase="experiment")
+    def start(self, prompt, followup=None):
+        if self.config.protocol == "guided_two_stage":
+            if not isinstance(followup, str) or not followup.strip():
+                raise ValueError("guided_two_stage requires a nonempty task.followup")
+        elif followup is not None:
+            raise ValueError("task.followup requires guided_two_stage; it must not be silently ignored")
+        if self.config.protocol.startswith("guided_"):
+            state = State(self.backend.prompt(guided_prompt(), prompt), phase="experiment", followup=followup)
             # Let the model start its ordinary reasoning; bookkeeping tags stay external.
             state.chunks.append({"kind": "experiment", "id": "e1", "text": ""})
             return state
@@ -78,7 +85,7 @@ class Engine:
         return event
 
     def step(self, state, mode, emit: Callable | None = None):
-        if self.config.protocol == "guided_single":
+        if self.config.protocol.startswith("guided_"):
             from .guided import step
             return step(self, state, mode, emit)
         cfg = self.config

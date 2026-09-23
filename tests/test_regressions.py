@@ -25,6 +25,55 @@ class GuidedBackend(MockBackend):
 
 
 class RegressionTests(unittest.TestCase):
+    def test_two_stage_forks_before_followup_and_compacts_each_experiment(self):
+        backend = GuidedBackend([
+            ('FIRST_PRIVATE_BODY r=5</think>', 'stop'), ('r=5</think>', 'stop'),
+            ('SECOND_FULL_BODY 4*5-3=17</think>', 'stop'), ('result=17</think>', 'stop'), ('17', 'eos'),
+            ('SECOND_COMPACT_BODY 4*5-3=17</think>', 'stop'), ('result=17</think>', 'stop'), ('17', 'eos'),
+        ])
+        engine = Engine(backend, Config(protocol='guided_two_stage', max_context_tokens=16000))
+        shared = engine.run(engine.start('Find r', 'FOLLOWUP_ONLY: compute 4*r-3'), 'full', stop_after_first=True)
+        self.assertEqual(shared.phase, 'next_stage')
+        self.assertEqual(len(shared.archive), 1)
+        self.assertTrue(all('FOLLOWUP_ONLY' not in t for t in backend.inputs))
+        full = engine.run(engine.fork(shared, 'full'), 'full')
+        compact = engine.run(engine.fork(shared, 'compact'), 'compact')
+        self.assertIn('FIRST_PRIVATE_BODY', backend.inputs[2])
+        self.assertNotIn('FIRST_PRIVATE_BODY', backend.inputs[5])
+        for i in (2, 5):
+            self.assertIn('Conclusion: r=5', backend.inputs[i])
+            self.assertIn('FOLLOWUP_ONLY', backend.inputs[i])
+        self.assertEqual(full.events[2]['seed'], compact.events[2]['seed'])
+        self.assertIn('SECOND_FULL_BODY', backend.inputs[4])
+        self.assertNotIn('SECOND_COMPACT_BODY', backend.inputs[7])
+        self.assertIn('Conclusion: result=17', backend.inputs[7])
+        for state in (full, compact):
+            self.assertEqual(state.status, 'completed')
+            self.assertEqual(state.answer, '17')
+            self.assertEqual(set(state.archive), {'e1', 'e2'})
+            self.assertEqual([e['stage'] for e in state.events], [1, 1, 2, 2, 2])
+        self.assertEqual(shared.phase, 'next_stage')
+        self.assertEqual(len(shared.archive), 1)
+
+    def test_two_stage_incomplete_second_summary_retains_second_body(self):
+        backend = GuidedBackend([
+            ('FIRST_BODY</think>', 'stop'), ('r=5</think>', 'stop'),
+            ('SECOND_BODY</think>', 'stop'), ('unfinished', 'length'),
+        ])
+        engine = Engine(backend, Config(protocol='guided_two_stage', max_context_tokens=16000))
+        state = engine.run(engine.start('Find r', 'Compute 4*r-3'), 'compact')
+        self.assertEqual(state.status, 'incomplete_phase_length')
+        self.assertEqual(set(state.archive), {'e1'})
+        self.assertNotIn('FIRST_BODY', state.text)
+        self.assertIn('SECOND_BODY', state.text)
+        self.assertIsNone(state.answer)
+
+    def test_followup_cannot_be_missing_or_silently_ignored(self):
+        for protocol, followup in [('guided_two_stage', None), ('guided_two_stage', ''),
+                                   ('guided_single', 'next'), ('autonomous', 'next')]:
+            with self.subTest(protocol=protocol, followup=followup), self.assertRaises(ValueError):
+                Engine(MockBackend(), Config(protocol=protocol)).start('task', followup)
+
     def test_guided_first_input_is_plain_reasoning_not_an_empty_xml_element(self):
         engine = Engine(MockBackend(), Config(protocol='guided_single', max_context_tokens=16000))
         state = engine.start('Compute 2 + 3')
