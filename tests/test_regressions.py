@@ -32,8 +32,8 @@ class RegressionTests(unittest.TestCase):
             next_user_turn = HFBackend.next_user_turn
         backend = QwenScripted([
             ('PRIVATE_BODY r=5</think>', 'stop'), ('r=5</think>', 'stop'),
-            ('SECOND_BODY 17</think>', 'stop'), ('17</think>', 'stop'), ('17', 'eos'),
-            ('SECOND_BODY 17</think>', 'stop'), ('17</think>', 'stop'), ('17', 'eos'),
+            ('SECOND_BODY 17</think>', 'stop'), ('17', 'eos'),
+            ('SECOND_BODY 17</think>', 'stop'), ('17', 'eos'),
         ])
         backend.tokenizer = SimpleNamespace(all_special_tokens=['<|im_start|>', '<|im_end|>'])
         engine = Engine(backend, Config(protocol='guided_chat_two_stage', max_context_tokens=16000))
@@ -41,17 +41,38 @@ class RegressionTests(unittest.TestCase):
         self.assertTrue(all('NEW_TASK' not in t for t in backend.inputs))
         full = engine.run(engine.fork(shared, 'full'), 'full')
         compact = engine.run(engine.fork(shared, 'compact'), 'compact')
-        for i in (2, 5):
+        for i in (2, 4):
             self.assertIn('</think>\nConclusion: r=5\n<|im_end|>\n<|im_start|>user\nNEW_TASK', backend.inputs[i])
             self.assertTrue(backend.inputs[i].endswith('<|im_start|>assistant\n<think>\n'))
         self.assertIn('PRIVATE_BODY', backend.inputs[2])
-        self.assertNotIn('PRIVATE_BODY', backend.inputs[5])
-        self.assertNotIn('SECOND_BODY', backend.inputs[7])
+        self.assertNotIn('PRIVATE_BODY', backend.inputs[4])
+        self.assertIn('SECOND_BODY', backend.inputs[3])
+        self.assertIn('SECOND_BODY', backend.inputs[5])
+        self.assertNotIn('SECOND_BODY', compact.text)
+        self.assertEqual([e['phase'] for e in compact.events], ['experiment', 'summary', 'experiment', 'answer'])
         self.assertIn('PRIVATE_BODY', full.text)
         self.assertEqual(full.answer, '17')
         self.assertEqual(compact.answer, '17')
         self.assertEqual(len(compact.archive), 2)
+        self.assertEqual(compact.archive['e2']['summary'], '17')
         self.assertNotIn('NEW_TASK', shared.text)
+
+    def test_chat_incomplete_second_answer_does_not_archive_or_compact_body(self):
+        from reasoning_memory.backend import HFBackend
+        from types import SimpleNamespace
+        class QwenScripted(GuidedBackend):
+            next_user_turn = HFBackend.next_user_turn
+        backend = QwenScripted([
+            ('r=5</think>', 'stop'), ('5</think>', 'stop'),
+            ('PRIVATE_STAGE_TWO</think>', 'stop'), ('17', 'length'),
+        ])
+        backend.tokenizer = SimpleNamespace(all_special_tokens=['<|im_start|>', '<|im_end|>'])
+        engine = Engine(backend, Config(protocol='guided_chat_two_stage', max_context_tokens=16000))
+        result = engine.run(engine.start('Compute r', 'Use r'), 'compact')
+        self.assertEqual(result.status, 'incomplete_phase_length')
+        self.assertEqual(set(result.archive), {'e1'})
+        self.assertIn('PRIVATE_STAGE_TWO', result.text)
+        self.assertIsNone(result.answer)
 
     def test_two_stage_forks_before_followup_and_compacts_each_experiment(self):
         backend = GuidedBackend([

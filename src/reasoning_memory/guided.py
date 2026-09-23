@@ -66,9 +66,14 @@ def step(engine, state, mode, emit=None):
             if phase == "experiment":
                 state.pending_body = content
                 state.chunks[-1]["text"] = content + "\n\n"
-                state.chunks.append({"kind": "summary", "id": experiment_id, "text":
-                    'Now I will state a short reusable conclusion without repeating the derivation.\nConclusion: '})
-                state.phase = "summary"
+                if cfg.protocol == "guided_chat_two_stage" and state.stage == 2:
+                    # This is a new assistant turn. After thinking closes, let the
+                    # model answer normally instead of reopening a summary prompt.
+                    state.phase = "answer"
+                else:
+                    state.chunks.append({"kind": "summary", "id": experiment_id, "text":
+                        'Now I will state a short reusable conclusion without repeating the derivation.\nConclusion: '})
+                    state.phase = "summary"
             elif phase == "summary":
                 summary = "Conclusion: " + content
                 state.chunks[-1]["text"] = summary + "\n"
@@ -79,6 +84,14 @@ def step(engine, state, mode, emit=None):
                 state.phase = "next_stage" if state.followup is not None and state.stage == 1 else "answer"
             else:
                 state.chunks[-1]["text"] += content
+                if cfg.protocol == "guided_chat_two_stage" and state.stage == 2:
+                    # The model's final answer is the last stage's conclusion.
+                    # It is archived only after a complete, nonempty answer.
+                    state.archive[experiment_id] = {"id": experiment_id,
+                        "body": state.pending_body, "summary": content}
+                    state.pending_body = ""
+                    if mode == "compact":
+                        engine.compact(state)
                 state.answer, state.status, state.phase = content, "completed", "done"
     except ProtocolError as exc:
         state.status, record["error"] = "protocol_error", str(exc)
