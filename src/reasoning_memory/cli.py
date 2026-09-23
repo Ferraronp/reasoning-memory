@@ -46,7 +46,12 @@ def environment():
 def doctor():
     from . import __version__
     print("reasoning-memory", __version__, flush=True)
-    print(json.dumps(environment(), ensure_ascii=False, indent=2))
+    try:
+        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                         stderr=subprocess.DEVNULL, text=True).strip()
+        print("Commit:", commit)
+    except (OSError, subprocess.CalledProcessError):
+        pass
     try:
         import torch
         print("CUDA:", torch.cuda.is_available())
