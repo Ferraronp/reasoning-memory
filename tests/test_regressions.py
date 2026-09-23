@@ -25,6 +25,25 @@ class GuidedBackend(MockBackend):
 
 
 class RegressionTests(unittest.TestCase):
+    def test_task_id_runs_only_requested_task_and_records_source_dataset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config, tasks, out = root/'config.json', root/'tasks.jsonl', root/'run'
+            config.write_text(json.dumps({'backend':'mock', 'protocol':'guided_single',
+                                          'max_context_tokens':16000}))
+            tasks.write_text(''.join(json.dumps({'id':name, 'prompt':'Compute 2+3',
+                                                  'expected':'5'})+'\n'
+                                     for name in ('skip_me', 'run_me')))
+            args = argparse.Namespace(config=config, tasks=tasks, output=out, seed=None,
+                                      limit=None, task_id='run_me', command='pair')
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(cli.execute(args), 0)
+            self.assertEqual([task['id'] for task in json.loads((out/'tasks.json').read_text())],
+                             ['run_me'])
+            self.assertEqual({row['task_id'] for row in json.loads((out/'results.json').read_text())},
+                             {'run_me'})
+            self.assertEqual(json.loads((out/'manifest.json').read_text())['completed_pairs'], 1)
+
     def test_chat_stage_preserves_full_thinking_and_reveals_followup_as_user(self):
         from reasoning_memory.backend import HFBackend
         from types import SimpleNamespace

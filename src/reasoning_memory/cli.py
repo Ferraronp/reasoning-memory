@@ -67,6 +67,11 @@ def execute(args):
     if args.seed is not None:
         cfg = replace(cfg, seed=args.seed)
     tasks = load_tasks(args.tasks)
+    task_id = getattr(args, "task_id", None)
+    if task_id is not None:
+        tasks = [task for task in tasks if task["id"] == task_id]
+        if not tasks:
+            raise ValueError(f"No task with id {task_id!r} in {args.tasks}")
     if args.limit is not None:
         if args.limit <= 0:
             raise ValueError("--limit must be positive")
@@ -186,6 +191,7 @@ def main():
         p.add_argument("--tasks", default="data/smoke.jsonl")
         p.add_argument("--output")
         p.add_argument("--limit", type=int)
+        p.add_argument("--task-id", help="Run only the task with this ID")
         p.add_argument("--seed", type=int)
         if command == "run":
             p.add_argument("--mode", choices=["full", "compact"], default="compact")
