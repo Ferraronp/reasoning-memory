@@ -64,9 +64,7 @@ Finish by closing the thinking block and giving a concise answer:
 
 
 def guided_prompt() -> str:
-    return '''Solve the task. The controller supplies the phase tags for one experiment.
-Inside <experiment>, investigate the task and end with </experiment>.
-Inside <summary>, write only a short conclusion with the result and necessary conditions,
-then end with </summary>. Do not repeat the investigation.
-Inside <answer>, write only the requested final answer and end with </answer>.
-Do not start new phases or quote these tags. Continue the already opened phase.'''
+    return '''Work through the task before giving the final answer. Use ordinary prose.
+If a short reusable conclusion is requested, state the result and necessary conditions
+without repeating the derivation. Finish thinking normally when done.
+The final answer must follow the format requested by the user.'''

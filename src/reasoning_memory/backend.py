@@ -29,10 +29,10 @@ class MockBackend:
 
     def generate(self, text, limit, seed, stop_strings=None):
         if stop_strings is not None:
-            if text.endswith('<experiment id="e1">\n'):
-                out = '2 plus 3 equals 5.</experiment>'
-            elif text.endswith('<summary id="e1">Conclusion: '):
-                out = 'The sum is 5.</summary>'
+            if text.endswith('<think>\n'):
+                out = '2 plus 3 equals 5.</think>'
+            elif text.endswith('Conclusion: '):
+                out = 'The sum is 5.</think>'
             else:
                 out = '5</answer>'
         elif '<summary id="e1">' not in text.split("ASSISTANT:")[-1]:
@@ -50,6 +50,8 @@ class MockBackend:
 class HFBackend:
     """Batch size 1. Every call prefills the entire canonical text from scratch."""
     def __init__(self, config):
+        import os
+        os.environ["USE_TF"] = "0"  # This backend uses PyTorch only.
         import torch
         import transformers
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -63,7 +65,7 @@ class HFBackend:
         if config.dtype == "bfloat16" and config.device == "cuda" and not torch.cuda.is_bf16_supported():
             raise ValueError("BF16 unsupported on this GPU; use float16")
         self.tokenizer = AutoTokenizer.from_pretrained(config.model_id, revision=config.revision, trust_remote_code=False)
-        kwargs = dict(revision=config.revision, torch_dtype=getattr(torch, config.dtype),
+        kwargs = dict(revision=config.revision, dtype=getattr(torch, config.dtype),
                       device_map={"": config.device}, trust_remote_code=False)
         if config.quantization == "int8":
             kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
@@ -106,6 +108,7 @@ class HFBackend:
         stops = STOP_STRINGS if stop_strings is None else stop_strings
         params = dict(max_new_tokens=limit, do_sample=config.temperature > 0,
                       use_cache=True, num_beams=1, eos_token_id=eos, pad_token_id=pad,
+                      bos_token_id=self.model.generation_config.bos_token_id,
                       stop_strings=stops)
         if config.temperature > 0:
             params.update(temperature=config.temperature, top_p=config.top_p, top_k=config.top_k)

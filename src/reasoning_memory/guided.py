@@ -20,7 +20,7 @@ def step(engine, state, mode, emit=None):
     stops = {"experiment": ["</experiment>", "</think>"],
              "summary": ["</summary>", "</think>"], "answer": ["</answer>"]}[phase]
     if phase == "answer":
-        state.chunks.append({"kind": "answer", "text": '</think><answer>'})
+        state.chunks.append({"kind": "answer", "text": '</think>\n\n'})
     before = state.text
     record = {"index": len(state.events), "mode": mode, "phase": phase,
               "protocol": "guided_single", "controller_scaffolded": True,
@@ -47,19 +47,20 @@ def step(engine, state, mode, emit=None):
             record["boundary"] = boundary or "eos"
             if phase == "experiment":
                 state.pending_body = content
-                state.chunks[-1]["text"] = f'<experiment id="e1">{content}</experiment>\n'
-                state.chunks.append({"kind": "summary", "id": "e1", "text": '<summary id="e1">Conclusion: '})
+                state.chunks[-1]["text"] = content + "\n\n"
+                state.chunks.append({"kind": "summary", "id": "e1", "text":
+                    'Now I will state a short reusable conclusion without repeating the derivation.\nConclusion: '})
                 state.phase = "summary"
             elif phase == "summary":
                 summary = "Conclusion: " + content
-                state.chunks[-1]["text"] = f'<summary id="e1">{summary}</summary>\n'
+                state.chunks[-1]["text"] = summary + "\n"
                 state.archive["e1"] = {"id": "e1", "body": state.pending_body, "summary": summary}
                 state.pending_body = ""
                 if mode == "compact":
                     engine.compact(state)
                 state.phase = "answer"
             else:
-                state.chunks[-1]["text"] += content + "</answer>"
+                state.chunks[-1]["text"] += content
                 state.answer, state.status, state.phase = content, "completed", "done"
     except ProtocolError as exc:
         state.status, record["error"] = "protocol_error", str(exc)

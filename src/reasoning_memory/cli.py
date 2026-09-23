@@ -87,6 +87,12 @@ def execute(args):
                     def save(event):
                         journal.write(json.dumps({"branch": branch, **event}, ensure_ascii=False) + "\n")
                         journal.flush()
+                        if event.get("phase") and not event.get("error"):
+                            gen = event.get("generation", {})
+                            print(f'[{branch}] {event["phase"]}: {gen.get("generated_tokens", 0)} generated tokens; '
+                                  f'active context {event["active_after_tokens"]} tokens', flush=True)
+                            generated_text = gen.get("text", "")
+                            print(generated_text[:1200] + ('\n[Full text in events.jsonl]' if len(generated_text) > 1200 else ''), flush=True)
                         if event.get("error"):
                             print(f'[{branch}] {event["status"]}: {event["error"]}', flush=True)
                             print(event.get("generation", {}).get("text", "")[-2000:], flush=True)

@@ -25,6 +25,25 @@ class GuidedBackend(MockBackend):
 
 
 class RegressionTests(unittest.TestCase):
+    def test_guided_first_input_is_plain_reasoning_not_an_empty_xml_element(self):
+        engine = Engine(MockBackend(), Config(protocol='guided_single', max_context_tokens=16000))
+        state = engine.start('Compute 2 + 3')
+        self.assertTrue(state.text.endswith('<think>\n'))
+        self.assertNotIn('<experiment', state.text)
+        self.assertNotIn('<summary', state.text)
+        engine.step(state, 'full')
+        self.assertEqual(state.phase, 'summary')
+        self.assertIn('2 plus 3 equals 5.', state.text)
+        self.assertTrue(state.text.endswith('Conclusion: '))
+        self.assertNotIn('<experiment', state.text)
+
+    def test_empty_experiment_still_fails_without_inventing_content(self):
+        backend = GuidedBackend([('</experiment>', 'stop')])
+        engine = Engine(backend, Config(protocol='guided_single', max_context_tokens=16000))
+        state = engine.run(engine.start('Compute 2 + 3'), 'full')
+        self.assertEqual(state.status, 'protocol_error')
+        self.assertEqual(state.archive, {})
+
     def test_guided_same_summary_clean_compaction_and_eos_final(self):
         backend = GuidedBackend([
             ('UNIQUE_CALCULATION_BODY 2+3=5</think>', 'stop'),

@@ -34,7 +34,8 @@ class Engine:
     def start(self, prompt):
         if self.config.protocol == "guided_single":
             state = State(self.backend.prompt(guided_prompt(), prompt), phase="experiment")
-            state.chunks.append({"kind": "experiment", "id": "e1", "text": '<experiment id="e1">\n'})
+            # Let the model start its ordinary reasoning; bookkeeping tags stay external.
+            state.chunks.append({"kind": "experiment", "id": "e1", "text": ""})
             return state
         return State(self.backend.prompt(system_prompt(self.config.allow_restore), prompt))
 
