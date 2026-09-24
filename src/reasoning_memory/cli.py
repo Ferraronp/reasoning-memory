@@ -64,6 +64,8 @@ def doctor():
 
 def execute(args):
     cfg = Config.load(args.config)
+    if (args.command == "control") != (cfg.protocol == "guided_direct"):
+        raise ValueError("Use command control with protocol guided_direct; controls do not create full/compact pairs")
     if args.seed is not None:
         cfg = replace(cfg, seed=args.seed)
     tasks = load_tasks(args.tasks)
@@ -92,6 +94,7 @@ def execute(args):
     manifest = {"command": args.command, "data_sha256": hashlib.sha256(Path(args.tasks).read_bytes()).hexdigest(),
                 "status": "starting", "real_model_run": cfg.backend != "mock",
                 "protocol": cfg.protocol, "completed_pairs": 0, "failed_shared_prefixes": 0}
+    manifest["evaluation_kind"] = "rule_execution_control" if args.command == "control" else "compaction"
     write_json(out / "manifest.json", manifest)
     results = []
     try:
@@ -110,10 +113,12 @@ def execute(args):
                             print(f'[{branch}] {event["phase"]} (stage {event.get("stage", 1)}): {gen.get("generated_tokens", 0)} generated tokens; '
                                   f'active context {event["active_after_tokens"]} tokens', flush=True)
                             generated_text = gen.get("text", "")
-                            print(generated_text[:1200] + ('\n[Full text in events.jsonl]' if len(generated_text) > 1200 else ''), flush=True)
+                            if args.command != "control":
+                                print(generated_text[:1200] + ('\n[Full text in events.jsonl]' if len(generated_text) > 1200 else ''), flush=True)
                         if event.get("error"):
                             print(f'[{branch}] {event["status"]}: {event["error"]}', flush=True)
-                            print(event.get("generation", {}).get("text", "")[-2000:], flush=True)
+                            if args.command != "control":
+                                print(event.get("generation", {}).get("text", "")[-2000:], flush=True)
                     return save
                 state = engine.start(task["prompt"], task.get("followup"))
                 if args.command == "pair":
@@ -131,14 +136,20 @@ def execute(args):
                         continue
                     modes = ["full", "compact"]
                 else:
-                    modes = [args.mode]
+                    modes = ["control"] if args.command == "control" else [args.mode]
                 for mode in modes:
-                    branch = engine.fork(state, mode)
+                    retention_mode = "full" if mode == "control" else mode
+                    branch = engine.fork(state, retention_mode)
                     write_json(taskdir / f"{mode}_start.json", {"active_text": branch.text})
-                    engine.run(branch, mode, emit(mode))
+                    print(f'[{index + 1}/{len(tasks)}] {task["id"]} {mode}: generating...', flush=True)
+                    engine.run(branch, retention_mode, emit(mode))
                     result = {"task_id": task["id"], "mode": mode,
                               "pairable": bool(state.archive) if args.command == "pair" else None,
                               **engine.result(branch, task.get("expected"))}
+                    if mode == "control":
+                        from .controls import classify_answer
+                        result.update(condition=task.get("condition"), case_id=task.get("case_id"),
+                                      answer_kind=classify_answer(branch.answer, task, branch.status))
                     write_json(taskdir / f"{mode}.json", result)
                     results.append({k: v for k, v in result.items() if k not in {"archive", "active_text"}})
                     write_json(out / "results.json", results)
@@ -175,6 +186,11 @@ def summarize(directory):
                          "prefill_tokens": sum(r["prefill_tokens"] for r in group)}
     summary["diagnostics"] = {"unpairable_tasks": len({r["task_id"] for r in rows if r.get("pairable") is False}),
                               "note": "Unpairable prefixes are excluded from arm accuracy; report their count separately."}
+    controls = [r for r in rows if r["mode"] == "control"]
+    if controls:
+        from .controls import summarize_conditions
+        summary["control_conditions"] = summarize_conditions(controls)
+        summary["diagnostics"]["note"] = "Rule execution controls: no reasoning was compacted and no treatment pair was created."
     write_json(directory / "summary.json", summary)
     print(json.dumps(summary, indent=2), "\nSaved:", directory.resolve())
 
@@ -185,7 +201,9 @@ def main():
     sub.add_parser("doctor")
     summary = sub.add_parser("summarize")
     summary.add_argument("directory")
-    for command in ("run", "pair"):
+    report_parser = sub.add_parser("report")
+    report_parser.add_argument("directory")
+    for command in ("run", "pair", "control"):
         p = sub.add_parser(command)
         p.add_argument("--config", default="configs/mock.json")
         p.add_argument("--tasks", default="data/smoke.jsonl")
@@ -201,6 +219,10 @@ def main():
         return 0
     if args.command == "summarize":
         summarize(args.directory)
+        return 0
+    if args.command == "report":
+        from .report import report
+        report(args.directory)
         return 0
     return execute(args)
 

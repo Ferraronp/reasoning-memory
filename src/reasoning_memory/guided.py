@@ -82,7 +82,7 @@ def step(engine, state, mode, emit=None):
             if phase == "experiment":
                 state.pending_body = content
                 state.chunks[-1]["text"] = content + "\n\n"
-                if cfg.protocol == "guided_chat_two_stage" and state.stage == 2:
+                if cfg.protocol == "guided_direct" or (cfg.protocol == "guided_chat_two_stage" and state.stage == 2):
                     # This is a new assistant turn. After thinking closes, let the
                     # model answer normally instead of reopening a summary prompt.
                     state.phase = "answer"
