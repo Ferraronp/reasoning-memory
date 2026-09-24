@@ -1,0 +1,20 @@
+{
+  "backend": "hf",
+  "protocol": "guided_direct",
+  "model_id": "Qwen/Qwen3-8B",
+  "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+  "device": "cuda",
+  "dtype": "float16",
+  "quantization": "int8",
+  "max_context_tokens": 4096,
+  "max_new_tokens": 2048,
+  "max_total_new_tokens": 2304,
+  "summary_max_new_tokens": 256,
+  "answer_max_new_tokens": 256,
+  "stage2_hide_source": false,
+  "continue_experiment_on_length": false,
+  "retry_offloaded_on_oom": true,
+  "allow_restore": false,
+  "seed": 42,
+  "max_events": 3
+}
